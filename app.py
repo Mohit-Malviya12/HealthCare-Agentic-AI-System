@@ -13,7 +13,8 @@
 # 3. Disease Prediction (ML-based with NLP extraction)
 # 4. Report Analyzer (Upload medical report PDF/text)
 # 5. Voice + Vision (Audio + image diagnosis)
-# 6. AI Chat (Conversational doctor with memory)
+# 6. Drug Interaction Checker
+# 7. AI Chat (Conversational doctor with memory)
 # ============================================================
 
 import streamlit as st
@@ -32,6 +33,7 @@ os.makedirs("results", exist_ok=True)
 from backend.agents.orchestrator import MasterOrchestratorAgent
 from backend.agents.specialists import AGENT_REGISTRY, get_agent
 from backend.agents.synthesis import SynthesisAgent
+from backend.agents.drug_interaction_agent import DrugInteractionAgent
 from backend.agents.disease_prediction_agent import AgenticDiseasePredictionAgent
 from backend.services.symptom_extractor import SymptomExtractorService
 from backend.services.medical_data import medical_data
@@ -118,6 +120,10 @@ if "synthesis_agent" not in st.session_state:
     st.session_state.synthesis_agent = SynthesisAgent()
 if "disease_agent" not in st.session_state:
     st.session_state.disease_agent = AgenticDiseasePredictionAgent()
+if "drug_agent" not in st.session_state:
+    st.session_state.drug_agent = DrugInteractionAgent()
+
+
 
 # ============================================================
 # SIDEBAR NAVIGATION
@@ -134,6 +140,7 @@ page = st.sidebar.radio(
         "🔬 Disease Prediction",
         "📄 Report Analyzer",
         "🎤 Voice + Vision",
+        "💊 Drug Interaction",
         "💬 AI Chat Doctor",
         "ℹ️ About System"
     ],
@@ -906,7 +913,108 @@ elif page == "🎤 Voice + Vision":
 
 
 # ============================================================
-# PAGE 6: AI CHAT DOCTOR (with memory)
+# PAGE 6: DRUG INTERACTION CHECKER
+# ============================================================
+elif page == "💊 Drug Interaction Checker":
+    st.title("💊 Drug Interaction Checker")
+    st.markdown("""
+    <div class='info-box'>
+    <b>AI-powered drug safety:</b> Enter all your current medications and our
+    Clinical Pharmacology Agent will check for dangerous interactions, severity levels,
+    and suggest safer alternatives. Works with brand names and generic names both.
+    </div>
+    """, unsafe_allow_html=True)
+
+    st.markdown("### Enter Your Medications")
+    st.caption("Enter one medicine per line or comma-separated")
+
+    meds_input = st.text_area(
+        "Medications:",
+        placeholder="e.g. Aspirin, Warfarin, Metformin, Omeprazole",
+        height=150, key="drug_input"
+    )
+
+    col1, col2 = st.columns(2)
+    with col1:
+        age_drug = st.text_input("Patient Age", placeholder="e.g. 45")
+    with col2:
+        condition = st.text_input("Known conditions (optional)", placeholder="e.g. Diabetes, Hypertension")
+
+    if st.button("🔍 Check Drug Interactions", type="primary", use_container_width=True):
+        if meds_input.strip():
+            # Parse medications
+            raw = meds_input.replace(",", chr(10))
+            meds_list = [m.strip() for m in raw.split(chr(10)) if m.strip()]
+
+            if len(meds_list) < 2:
+                st.warning("Please enter at least 2 medications to check interactions.")
+            else:
+                with st.spinner(f"Analyzing {len(meds_list)} medications for interactions..."):
+                    result = st.session_state.drug_agent.check_interactions(meds_list)
+
+                # Overall safety badge
+                safety = result.get("overall_safety", "unknown")
+                safety_icon = st.session_state.drug_agent.get_safety_icon(safety)
+                safety_colors = {"safe": "#2e7d32", "caution": "#e65100",
+                                 "dangerous": "#c62828", "unknown": "#666"}
+                bg_colors = {"safe": "#e8f5e9", "caution": "#fff3e0",
+                             "dangerous": "#ffebee", "unknown": "#f5f5f5"}
+
+                st.markdown(f"""
+                <div style='background:{bg_colors.get(safety,"#f5f5f5")};
+                    border-left:5px solid {safety_colors.get(safety,"#666")};
+                    padding:16px;border-radius:8px;margin:12px 0'>
+                    <h3 style='margin:0;color:{safety_colors.get(safety,"#333")}'>
+                    {safety_icon} Overall Safety: {safety.upper()}</h3>
+                    <p style='margin:6px 0 0;color:{safety_colors.get(safety,"#333")}'>
+                    {result.get("overall_message","")}</p>
+                </div>""", unsafe_allow_html=True)
+
+                st.markdown(f"**Medications analyzed:** {', '.join(result.get('medications_analyzed',[]))}")
+                st.markdown(f"**Interactions found:** {result.get('total_interactions_found', 0)}")
+
+                # Interactions detail
+                interactions = result.get("interactions", [])
+                if interactions:
+                    st.markdown("---")
+                    st.markdown("### ⚡ Interaction Details")
+                    for i, interaction in enumerate(interactions):
+                        sev = interaction.get("severity", "mild")
+                        sev_color = st.session_state.drug_agent.get_severity_color(sev)
+                        with st.expander(
+                            f"{'🔴' if sev=='severe' else '🟠' if sev=='moderate' else '🟡'} "
+                            f"{interaction.get('drug_a','')} + {interaction.get('drug_b','')} — {sev.upper()}",
+                            expanded=(sev == "severe")
+                        ):
+                            col_a, col_b = st.columns(2)
+                            with col_a:
+                                st.markdown(f"**Severity:** <span style='color:{sev_color};font-weight:bold'>{sev.upper()}</span>", unsafe_allow_html=True)
+                                st.markdown(f"**How they interact:** {interaction.get('mechanism','')}")
+                                st.markdown(f"**What can happen:** {interaction.get('clinical_effect','')}")
+                            with col_b:
+                                st.markdown(f"**Recommendation:** {interaction.get('recommendation','')}")
+                                alt = interaction.get("alternative")
+                                if alt:
+                                    st.markdown(f"**Safer alternative:** `{alt}`")
+                else:
+                    st.success("✅ No significant interactions found between your medications!")
+
+                # General advice
+                advice = result.get("general_advice", [])
+                if advice:
+                    st.markdown("---")
+                    st.markdown("### 💡 General Medication Safety Tips")
+                    for tip in advice:
+                        st.markdown(f"• {tip}")
+
+                show_disclaimer()
+        else:
+            st.warning("Please enter your medications.")
+
+
+
+# ============================================================
+# PAGE 7: AI CHAT DOCTOR (with memory)
 # ============================================================
 elif page == "💬 AI Chat Doctor":
     st.title("💬 AI Doctor Chat")
@@ -1018,6 +1126,10 @@ elif page == "ℹ️ About System":
     **6. Memory System**
     - Chat history maintained throughout session
     - AI Doctor remembers earlier parts of conversation
+                
+    **7. Drug Interaction Checker**
+    - Check the combination of multiple medicines
+    - Give the alternative Medicine options
 
     ### Technology Stack
     - **Frontend:** Streamlit
@@ -1037,6 +1149,7 @@ elif page == "ℹ️ About System":
     - ✅ Clean code (no commented junk)
     - ✅ Medical disclaimer always present
     - ✅ Parallel agent execution for speed
+    - ✅ Implement Drug Interaction Checker 
     """)
 
     show_disclaimer()

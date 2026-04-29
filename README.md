@@ -36,6 +36,7 @@ Structured Output + Voice Response
 - **Chat Memory** — Full conversation history maintained
 - **Voice I/O** — Speak symptoms, hear diagnosis
 - **Medical Safety** — Disclaimer always shown, emergency alerts
+- **Drug Interaction Checker** — Combined Multiple Medicines 
 
 ## Setup
 
@@ -90,7 +91,7 @@ healthcare_ai/
 | LLM | LLaMA 3.3 70B (Groq) |
 | Speech-to-Text | Groq Whisper Large V3 |
 | Vision | LLaMA 4 Scout (multimodal) |
-| ML Model | Support Vector Classifier (SVC) |
+| AI Model | Hugging Face |
 | NLP | LLM-based symptom extraction |
 | TTS | Google Text-to-Speech (gTTS) |
 
