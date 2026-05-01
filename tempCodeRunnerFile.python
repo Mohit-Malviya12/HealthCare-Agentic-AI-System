@@ -1,0 +1,639 @@
+"""
+A1 Landscape Poster — Medimate AI Healthcare System
+Matches the sample: dark diagonal right-side header, colored section bars,
+5-column content layout, white cards, bullet points.
+A1 landscape = 841mm x 594mm = 2384pt x 1684pt
+"""
+
+from reportlab.pdfgen import canvas
+from reportlab.lib.pagesizes import A1, landscape
+from reportlab.lib import colors
+from reportlab.lib.units import mm, pt
+from reportlab.platypus import Paragraph, Frame
+from reportlab.lib.styles import ParagraphStyle
+from reportlab.lib.enums import TA_LEFT, TA_CENTER, TA_RIGHT
+import math
+
+# ── Page dimensions ──────────────────────────────────────────────────────────
+PW, PH = landscape(A1)   # 2384 x 1684 pt  (841mm x 594mm)
+
+# ── Colors (matching sample poster palette) ───────────────────────────────────
+C_DARK_BG   = colors.HexColor('#1a1a2e')   # very dark navy — right strip bg
+C_NAVY      = colors.HexColor('#0a2342')
+C_BLUE      = colors.HexColor('#16437e')
+C_ORANGE    = colors.HexColor('#d4521a')   # section header orange (matches sample)
+C_RED       = colors.HexColor('#b02a1a')   # alternate section header
+C_TEAL      = colors.HexColor('#0d6e6e')
+C_GREEN     = colors.HexColor('#1a6b3c')
+C_GOLD      = colors.HexColor('#c8860a')
+C_WHITE     = colors.white
+C_LIGHT     = colors.HexColor('#f4f2ee')   # page background — warm cream
+C_CARD      = colors.white
+C_BORDER    = colors.HexColor('#cccccc')
+C_TEXT      = colors.HexColor('#222222')
+C_TEXT_MED  = colors.HexColor('#444444')
+C_PALE_BLUE = colors.HexColor('#ddeeff')
+C_PALE_ORG  = colors.HexColor('#fff0e8')
+
+# ── Layout constants ──────────────────────────────────────────────────────────
+RIGHT_STRIP_W  = 118*mm   # dark title strip on right
+PAD            = 7*mm
+GAP            = 5*mm
+HEADER_H       = 52*mm    # top orange stripe height
+FOOTER_H       = 22*mm
+N_COLS         = 5
+CONTENT_X      = PAD
+CONTENT_W      = PW - RIGHT_STRIP_W - 2*PAD
+CONTENT_Y_TOP  = PH - HEADER_H - PAD
+CONTENT_Y_BOT  = FOOTER_H + PAD
+CONTENT_H      = CONTENT_Y_TOP - CONTENT_Y_BOT
+COL_W          = (CONTENT_W - (N_COLS - 1)*GAP) / N_COLS
+
+def col_x(n):
+    return CONTENT_X + n*(COL_W + GAP)
+
+# ── Drawing helpers ───────────────────────────────────────────────────────────
+def rr(c, x, y, w, h, r=4, fill=None, stroke=None, sw=0.5):
+    """Draw rounded rectangle."""
+    p = c.beginPath()
+    p.moveTo(x+r, y)
+    p.lineTo(x+w-r, y);  p.arcTo(x+w-r, y, x+w, y+r, -90, 90)
+    p.lineTo(x+w, y+h-r); p.arcTo(x+w-r, y+h-r, x+w, y+h, 0, 90)
+    p.lineTo(x+r, y+h);  p.arcTo(x, y+h-r, x+r, y+h, 90, 90)
+    p.lineTo(x, y+r);    p.arcTo(x, y, x+r, y+r, 180, 90)
+    p.close()
+    if fill: c.setFillColor(fill)
+    if stroke: c.setStrokeColor(stroke); c.setLineWidth(sw)
+    c.drawPath(p, fill=1 if fill else 0, stroke=1 if stroke else 0)
+
+def rect(c, x, y, w, h, fill=None, stroke=None, sw=0.3):
+    if fill: c.setFillColor(fill)
+    if stroke: c.setStrokeColor(stroke); c.setLineWidth(sw)
+    c.rect(x, y, w, h, fill=1 if fill else 0, stroke=1 if stroke else 0)
+
+def txt(c, x, y, text, font="Helvetica", size=9, color=C_TEXT, align='left'):
+    c.setFillColor(color)
+    c.setFont(font, size)
+    if align == 'center': c.drawCentredString(x, y, text)
+    elif align == 'right': c.drawRightString(x, y, text)
+    else: c.drawString(x, y, text)
+
+def para(c, x, y, w, h, text, font="Helvetica", size=9, color=C_TEXT, leading=13, align=TA_LEFT):
+    style = ParagraphStyle('p', fontName=font, fontSize=size, textColor=color,
+                           leading=leading, alignment=align, wordWrap='LTR',
+                           spaceAfter=0, spaceBefore=0)
+    p = Paragraph(text, style)
+    f = Frame(x, y, w, h, leftPadding=0, rightPadding=0, topPadding=0, bottomPadding=0,
+              showBoundary=0)
+    f.addFromList([p], c)
+
+# ── SECTION HEADER BAR ────────────────────────────────────────────────────────
+def sec_bar(c, x, y, w, h, text, bg=C_ORANGE):
+    rect(c, x, y, w, h, fill=bg)
+    c.setFillColor(C_WHITE)
+    c.setFont("Helvetica-Bold", 10.5)
+    c.drawString(x + 5, y + h/2 - 4, text.upper())
+
+# ── BULLET LINE ───────────────────────────────────────────────────────────────
+def bul(c, x, y, text, bcolor=C_ORANGE, size=8.2, w=None, bold_prefix=None):
+    """Draw a bullet point. bold_prefix: text before ' — ' drawn bold."""
+    c.setFillColor(bcolor)
+    c.setFont("Helvetica-Bold", 10)
+    c.drawString(x, y, "\u25b8")
+    if bold_prefix and ' — ' in text:
+        parts = text.split(' — ', 1)
+        bw = c.stringWidth(parts[0]+' \u2014 ', 'Helvetica-Bold', size)
+        c.setFont('Helvetica-Bold', size); c.setFillColor(C_NAVY)
+        c.drawString(x+8, y, parts[0]+' \u2014 ')
+        c.setFont('Helvetica', size); c.setFillColor(C_TEXT_MED)
+        c.drawString(x+8+bw, y, parts[1])
+    else:
+        c.setFont("Helvetica", size); c.setFillColor(C_TEXT_MED)
+        c.drawString(x+8, y, text)
+
+def bul_block(c, x, y, items, size=8.2, bcolor=C_ORANGE, line_h=12, bold=False):
+    """Draw multiple bullets, return final y."""
+    for item in items:
+        bul(c, x, y, item, bcolor=bcolor, size=size, bold_prefix=bold)
+        y -= line_h
+    return y
+
+# ── SMALL CARD ────────────────────────────────────────────────────────────────
+def card(c, x, y, w, h, title=None, title_bg=C_ORANGE, title_h=14, content_fn=None):
+    rr(c, x, y, w, h, r=4, fill=C_CARD, stroke=C_BORDER, sw=0.4)
+    if title:
+        rect(c, x, y+h-title_h, w, title_h, fill=title_bg)
+        c.setFillColor(C_WHITE)
+        c.setFont("Helvetica-Bold", 9)
+        c.drawString(x+5, y+h-title_h+3.5, title.upper())
+    if content_fn:
+        content_fn(c, x+5, y, w-10, h-title_h-4)
+
+# ── MINI PILL ─────────────────────────────────────────────────────────────────
+def pill(c, x, y, text, bg=C_PALE_BLUE, fc=C_NAVY, w=None):
+    tw = c.stringWidth(text, 'Helvetica-Bold', 7.5)
+    pw = (w or tw+12)
+    rr(c, x, y-3, pw, 13, r=3, fill=bg, stroke=C_BORDER, sw=0.3)
+    c.setFillColor(fc); c.setFont('Helvetica-Bold', 7.5)
+    c.drawString(x+4, y+0.5, text)
+    return pw
+
+# ── FLOW BOX ──────────────────────────────────────────────────────────────────
+def flow_box(c, x, y, w, h, text, bg=C_PALE_BLUE, tc=C_NAVY):
+    rr(c, x, y, w, h, r=3, fill=bg, stroke=C_BLUE, sw=0.5)
+    c.setFillColor(tc); c.setFont('Helvetica-Bold', 8)
+    c.drawCentredString(x+w/2, y+h/2-3.5, text)
+
+def flow_arrow(c, cx, y, length=8):
+    c.setStrokeColor(colors.HexColor('#999999')); c.setLineWidth(0.8)
+    c.line(cx, y, cx, y-length)
+    c.setFillColor(colors.HexColor('#999999'))
+    p = c.beginPath()
+    p.moveTo(cx, y-length-4); p.lineTo(cx-3, y-length); p.lineTo(cx+3, y-length)
+    p.close(); c.drawPath(p, fill=1, stroke=0)
+
+# ── AGENT DOT + NAME ──────────────────────────────────────────────────────────
+def agent_row(c, x, y, name, dot_color):
+    c.setFillColor(dot_color); c.circle(x+4, y+3.5, 3.5, fill=1, stroke=0)
+    c.setFillColor(C_NAVY); c.setFont('Helvetica-Bold', 8)
+    c.drawString(x+11, y+1, name)
+
+# ─────────────────────────────────────────────────────────────────────────────
+# DRAW POSTER
+# ─────────────────────────────────────────────────────────────────────────────
+OUT = '/mnt/user-data/outputs/Medimate_A1_Poster.pdf'
+c = canvas.Canvas(OUT, pagesize=(PW, PH))
+
+# ── BACKGROUND ────────────────────────────────────────────────────────────────
+rect(c, 0, 0, PW, PH, fill=C_LIGHT)
+
+# ── TOP ORANGE HEADER STRIPE ──────────────────────────────────────────────────
+# Gradient-style: darker left to right
+steps = 60
+for i in range(steps):
+    t = i/steps
+    r_ = int(180 + t*30)
+    g_ = int(60 + t*20)
+    b_ = int(10)
+    c.setFillColorRGB(r_/255, g_/255, b_/255)
+    sw = CONTENT_W/steps
+    c.rect(CONTENT_X + i*sw, PH-HEADER_H, sw+1, HEADER_H, fill=1, stroke=0)
+
+# College logo placeholder circle
+lx, ly = CONTENT_X + 24*mm, PH - HEADER_H/2
+c.setFillColor(colors.HexColor('#ffffff33'))
+c.circle(lx, ly, 18*mm, fill=1, stroke=0)
+c.setStrokeColor(colors.HexColor('#ffffff88')); c.setLineWidth(1.5)
+c.circle(lx, ly, 18*mm, fill=0, stroke=1)
+c.setFillColor(C_WHITE); c.setFont('Helvetica-Bold', 7)
+c.drawCentredString(lx, ly+3, 'SAMRAT ASHOK')
+c.drawCentredString(lx, ly-5, 'TECHNOLOGICAL')
+c.drawCentredString(lx, ly-13, 'INSTITUTE')
+
+# Title in header
+tx = CONTENT_X + 50*mm
+c.setFillColor(C_WHITE)
+c.setFont('Helvetica-Bold', 28)
+c.drawString(tx, PH - 20*mm, 'Medimate')
+c.setFont('Helvetica-Bold', 16)
+c.drawString(tx, PH - 32*mm, 'AI Powered Advanced Healthcare System')
+c.setFont('Helvetica', 10)
+c.setFillColorRGB(1,1,1,0.85)
+c.drawString(tx, PH - 42*mm, 'Multi-Agent Medical Diagnosis  |  LLaMA 3.3 70B  |  Groq API  |  Streamlit  |  SVC ML Model')
+
+# Red accent line below header
+rect(c, CONTENT_X, PH-HEADER_H-3*mm, CONTENT_W, 3*mm, fill=C_RED)
+
+# ── RIGHT DARK STRIP ──────────────────────────────────────────────────────────
+STRIP_X = PW - RIGHT_STRIP_W
+rect(c, STRIP_X, 0, RIGHT_STRIP_W, PH, fill=C_DARK_BG)
+
+# Diagonal accent lines
+c.setStrokeColor(colors.HexColor('#ffffff0a'))
+for i in range(0, 20):
+    c.setLineWidth(0.5)
+    c.line(STRIP_X, i*90, PW, i*90-40)
+
+# Medical cross icon
+cx_ic = STRIP_X + RIGHT_STRIP_W/2
+cy_ic = PH - 35*mm
+c.setFillColor(colors.HexColor('#ffffff22'))
+c.circle(cx_ic, cy_ic, 20*mm, fill=1, stroke=0)
+c.setStrokeColor(C_WHITE); c.setLineWidth(3)
+c.line(cx_ic, cy_ic-12*mm, cx_ic, cy_ic+12*mm)
+c.line(cx_ic-12*mm, cy_ic, cx_ic+12*mm, cy_ic)
+c.setFillColor(C_ORANGE); c.circle(cx_ic, cy_ic, 4*mm, fill=1, stroke=0)
+
+# Project title (rotated vertical) in strip
+c.saveState()
+c.translate(STRIP_X + RIGHT_STRIP_W/2, PH/2)
+c.rotate(90)
+c.setFillColor(C_WHITE)
+c.setFont('Helvetica-Bold', 20)
+c.drawCentredString(0, 6, 'Medimate — AI Powered Advanced Healthcare System')
+c.setFont('Helvetica', 10)
+c.setFillColorRGB(1,1,1,0.7)
+c.drawCentredString(0, -12, 'A Multi-Agent Medical Diagnosis Platform')
+c.restoreState()
+
+# Separator line
+c.setStrokeColor(colors.HexColor('#ffffff33')); c.setLineWidth(0.8)
+c.line(STRIP_X+8*mm, PH*0.35, STRIP_X+RIGHT_STRIP_W-8*mm, PH*0.35)
+
+# Supervision block in strip
+sy = PH*0.33
+def strip_line(label, value, yy):
+    c.setFillColor(colors.HexColor('#ffffff99'))
+    c.setFont('Helvetica', 7.5); c.drawCentredString(cx_ic, yy+10, label)
+    c.setFillColor(C_WHITE); c.setFont('Helvetica-Bold', 9)
+    c.drawCentredString(cx_ic, yy, value)
+
+strip_line('Under Supervision of', 'Prof. Apoorva Yadav', sy)
+strip_line('Co-ordinator', 'Prof. Rashi Kumar', sy-28)
+c.setFillColor(colors.HexColor('#ffffff33'))
+c.roundRect(STRIP_X+10*mm, sy-55, RIGHT_STRIP_W-20*mm, 18, 4, fill=1, stroke=0)
+c.setFillColor(C_WHITE); c.setFont('Helvetica-Bold', 9)
+c.drawCentredString(cx_ic, sy-47, 'Team ID: AI2025TID09')
+
+# Team members in strip
+c.setStrokeColor(colors.HexColor('#ffffff33')); c.setLineWidth(0.8)
+c.line(STRIP_X+8*mm, sy-70, STRIP_X+RIGHT_STRIP_W-8*mm, sy-70)
+c.setFillColor(colors.HexColor('#ffffff99')); c.setFont('Helvetica-Bold', 8.5)
+c.drawCentredString(cx_ic, sy-85, 'TEAM MEMBERS')
+members = [
+    ('Pranjal Thakre', '0108AI221043'),
+    ('Mohit Malviya', '0108AI221032'),
+    ('Abhishek Shrivastava', '0108AI221002'),
+]
+my = sy-102
+for name, roll in members:
+    c.setFillColor(C_WHITE); c.setFont('Helvetica-Bold', 8.5)
+    c.drawCentredString(cx_ic, my, name)
+    c.setFillColor(colors.HexColor('#ffffff77')); c.setFont('Helvetica', 7.5)
+    c.drawCentredString(cx_ic, my-10, roll)
+    my -= 26
+
+# Academic year
+c.setFillColor(colors.HexColor('#ffffff55')); c.setFont('Helvetica', 8)
+c.drawCentredString(cx_ic, my-5, 'Academic Year: 2022-26')
+
+# Department badge bottom of strip
+c.setFillColor(C_ORANGE)
+c.roundRect(STRIP_X+8*mm, 20, RIGHT_STRIP_W-16*mm, 30, 5, fill=1, stroke=0)
+c.setFillColor(C_WHITE); c.setFont('Helvetica-Bold', 9)
+c.drawCentredString(cx_ic, 38, 'DEPARTMENT OF AI')
+c.setFont('Helvetica', 7.5)
+c.drawCentredString(cx_ic, 26, 'SATI, Vidisha (M.P.)')
+
+# ── FOOTER BAR ────────────────────────────────────────────────────────────────
+rect(c, 0, 0, PW-RIGHT_STRIP_W, FOOTER_H, fill=C_NAVY)
+c.setFillColor(C_WHITE); c.setFont('Helvetica-Bold', 8.5)
+c.drawString(PAD+3, FOOTER_H/2+2, 'AI Healthcare Companion  |  LLaMA 3.3 70B  |  Groq API  |  Whisper V3  |  LLaMA 4 Scout  |  SVC ML  |  Streamlit  |  gTTS  |  Python 3.x')
+c.setFillColor(colors.HexColor('#ffffff99')); c.setFont('Helvetica', 7.5)
+c.drawRightString(STRIP_X-PAD, FOOTER_H/2-5, 'For Educational Purposes Only — Always consult a qualified medical professional')
+
+# ─────────────────────────────────────────────────────────────────────────────
+# CONTENT COLUMNS
+# ─────────────────────────────────────────────────────────────────────────────
+
+TOP  = CONTENT_Y_TOP    # top of content area
+BOT  = CONTENT_Y_BOT    # bottom of content area
+CH   = CONTENT_H        # total content height
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# COLUMN 0  — Abstract + Introduction + Problem Statement
+# ═══════════════════════════════════════════════════════════════════════════════
+cx0 = col_x(0)
+
+# --- ABSTRACT card ---
+abs_h = 100*mm
+ay = TOP - abs_h
+rr(c, cx0, ay, COL_W, abs_h, r=5, fill=C_CARD, stroke=C_BORDER, sw=0.4)
+sec_bar(c, cx0, ay+abs_h-14, COL_W, 14, 'Abstract', bg=C_ORANGE)
+para(c, cx0+5, ay+3, COL_W-10, abs_h-20,
+     'Medimate is an <b>advanced multi-agent AI healthcare system</b> replicating the hospital '
+     'Multi-Disciplinary Team (MDT) model digitally. Eight specialist AI doctors — General Physician, '
+     'Cardiologist, Neurologist, Pulmonologist, Psychologist, Gastroenterologist, Dermatologist, and '
+     'Endocrinologist — run in <b>parallel</b> via Python ThreadPoolExecutor, coordinated by a Master '
+     'Orchestrator Agent. A trained SVC ML model (41 diseases, 132 symptoms) provides confidence-scored '
+     'differential diagnosis. Multi-modal inputs: text (Hindi/English), live voice, medical images, and '
+     'lab reports. gTTS audio output, drug interaction checking, and AI Chat Doctor with full session '
+     'memory complete the platform. Built with Streamlit on top of Groq API.',
+     font='Helvetica', size=8.5, color=C_TEXT_MED, leading=13)
+
+# --- INTRODUCTION card ---
+intro_h = 64*mm
+iy = ay - GAP - intro_h
+rr(c, cx0, iy, COL_W, intro_h, r=5, fill=C_CARD, stroke=C_BORDER, sw=0.4)
+sec_bar(c, cx0, iy+intro_h-14, COL_W, 14, 'Introduction', bg=C_RED)
+iy_c = iy + intro_h - 22
+bul_block(c, cx0+4, iy_c, [
+    'Sequential specialist consultations cause diagnostic delays',
+    'Language barriers — patients describe in Hindi/mixed language',
+    'No unified platform for text + voice + image + report',
+    'Drug safety checking requires separate specialized tools',
+    'Rural patients lack access to multi-specialist care',
+], size=8, bcolor=C_RED, line_h=11)
+
+# --- PROBLEM STATEMENT card ---
+prob_h = TOP - abs_h - intro_h - 3*GAP - BOT
+py = BOT
+rr(c, cx0, py, COL_W, prob_h, r=5, fill=C_CARD, stroke=C_BORDER, sw=0.4)
+sec_bar(c, cx0, py+prob_h-14, COL_W, 14, 'Problem Statement', bg=C_NAVY)
+c.setFillColor(C_TEXT_MED); c.setFont('Helvetica', 8.2)
+ptext = ('No single AI system provides simultaneous multi-specialist evaluation, '
+         'natural language symptom input, multilingual support, '
+         'medical image analysis, drug safety checking, and '
+         'voice-based interaction in one integrated platform.')
+para(c, cx0+5, py+prob_h-34, COL_W-10, prob_h-38, ptext,
+     font='Helvetica', size=8.2, color=C_TEXT_MED, leading=12.5)
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# COLUMN 1 — Objectives + 8 Agents + Tech Stack
+# ═══════════════════════════════════════════════════════════════════════════════
+cx1 = col_x(1)
+
+# --- OBJECTIVES card ---
+obj_h = 74*mm
+oy = TOP - obj_h
+rr(c, cx1, oy, COL_W, obj_h, r=5, fill=C_CARD, stroke=C_BORDER, sw=0.4)
+sec_bar(c, cx1, oy+obj_h-14, COL_W, 14, 'Objectives', bg=C_TEAL)
+oy_c = oy + obj_h - 24
+objs = [
+    '8 specialist agents execute simultaneously via ThreadPoolExecutor',
+    'NLP extracts symptoms from Hindi/English natural language',
+    'SVC ML model predicts across 41 diseases, 132 symptoms',
+    'Multi-modal: text, voice, image, .txt lab report ingestion',
+    'Drug interaction safety check for multiple medications',
+    'Full session memory in AI Chat Doctor for follow-ups',
+]
+for i, ob in enumerate(objs):
+    c.setFillColor(C_TEAL); c.circle(cx1+6, oy_c+3, 3.5, fill=1, stroke=0)
+    c.setFillColor(C_WHITE); c.setFont('Helvetica-Bold', 7); c.drawCentredString(cx1+6, oy_c+1, str(i+1))
+    para(c, cx1+14, oy_c-8, COL_W-18, 16, ob, font='Helvetica', size=8, color=C_TEXT_MED, leading=11)
+    oy_c -= 11.5
+
+# --- 8 SPECIALIST AGENTS card ---
+ag_h = 76*mm
+agy = oy - GAP - ag_h
+rr(c, cx1, agy, COL_W, ag_h, r=5, fill=C_CARD, stroke=C_BORDER, sw=0.4)
+sec_bar(c, cx1, agy+ag_h-14, COL_W, 14, '8 Specialist AI Agents', bg=C_ORANGE)
+agents = [
+    ('General Physician', colors.HexColor('#c0392b')),
+    ('Cardiologist', colors.HexColor('#e74c3c')),
+    ('Neurologist', colors.HexColor('#8e44ad')),
+    ('Pulmonologist', colors.HexColor('#2980b9')),
+    ('Psychologist', colors.HexColor('#27ae60')),
+    ('Gastroenterologist', colors.HexColor('#e67e22')),
+    ('Dermatologist', colors.HexColor('#d35400')),
+    ('Endocrinologist', colors.HexColor('#16a085')),
+]
+pill_w = (COL_W - 14) / 2
+agy_c = agy + ag_h - 22
+for i, (name, dcol) in enumerate(agents):
+    row, col_i = i//2, i%2
+    px = cx1+4 + col_i*(pill_w+4)
+    py2 = agy_c - row*16
+    rr(c, px, py2-3, pill_w, 13, r=3, fill=C_PALE_BLUE, stroke=C_BORDER, sw=0.3)
+    c.setFillColor(dcol); c.circle(px+7, py2+3.5, 3.5, fill=1, stroke=0)
+    c.setFillColor(C_NAVY); c.setFont('Helvetica-Bold', 7.8)
+    c.drawString(px+14, py2+0.5, name)
+
+# --- TECH STACK card ---
+tech_h = TOP - obj_h - ag_h - 3*GAP - BOT
+ty = BOT
+rr(c, cx1, ty, COL_W, tech_h, r=5, fill=C_CARD, stroke=C_BORDER, sw=0.4)
+sec_bar(c, cx1, ty+tech_h-14, COL_W, 14, 'Tools & Technology', bg=C_RED)
+techs = [
+    ('Frontend', 'Streamlit >= 1.32.0'),
+    ('LLM', 'LLaMA 3.3 70B (Groq)'),
+    ('Vision', 'LLaMA 4 Scout (Groq)'),
+    ('STT', 'Groq Whisper Large V3'),
+    ('TTS', 'gTTS (Google)'),
+    ('ML Model', 'SVC — scikit-learn'),
+    ('Concurrency', 'ThreadPoolExecutor'),
+    ('Data', '6 CSV files via pandas'),
+    ('Env', 'python-dotenv, .env'),
+]
+ty_c = ty + tech_h - 22
+tw2 = COL_W/2 - 5
+for i, (label, val) in enumerate(techs):
+    col_i = i % 2; row = i // 2
+    tx2 = cx1 + 3 + col_i*(tw2+4)
+    ty2 = ty_c - row*14.5
+    rr(c, tx2, ty2-3, tw2, 13, r=2, fill=colors.HexColor('#f5f5f5'))
+    c.setFillColor(C_RED); c.setFont('Helvetica-Bold', 7.2)
+    c.drawString(tx2+3, ty2+1.5, label+':')
+    c.setFillColor(C_TEXT); c.setFont('Helvetica', 7.2)
+    lw = c.stringWidth(label+':', 'Helvetica-Bold', 7.2)
+    c.drawString(tx2+3+lw+2, ty2+1.5, val)
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# COLUMN 2 — System Architecture (flow diagram) + Algorithm
+# ═══════════════════════════════════════════════════════════════════════════════
+cx2 = col_x(2)
+
+# --- ARCHITECTURE card ---
+arch_h = CH * 0.62
+arcy = TOP - arch_h
+rr(c, cx2, arcy, COL_W, arch_h, r=5, fill=C_CARD, stroke=C_BORDER, sw=0.4)
+sec_bar(c, cx2, arcy+arch_h-14, COL_W, 14, 'System Architecture', bg=C_BLUE)
+
+# Flow diagram
+flow_items = [
+    ('User Input (Text / Voice / Image / Report)', colors.HexColor('#ddeeff'), C_NAVY),
+    ('Master Orchestrator Agent (Triage & Routing)', colors.HexColor('#fff0d8'), colors.HexColor('#7a4400')),
+    ('NLP Extractor + SVC ML Model (41 diseases)', colors.HexColor('#ddeeff'), C_NAVY),
+    ('8 Parallel Specialist Agents (ThreadPoolExecutor)', colors.HexColor('#fff0e0'), C_ORANGE),
+    ('Synthesis Agent (Unified Diagnosis)', colors.HexColor('#ddeeff'), C_NAVY),
+    ('Structured Output + Voice (gTTS MP3)', colors.HexColor('#ffe0e0'), C_RED),
+]
+bw_flow = COL_W - 20
+bx_flow = cx2 + 10
+total_flow_h = arch_h - 30
+box_h = 14; arr_h = 10
+n_f = len(flow_items)
+total_used = n_f*box_h + (n_f-1)*arr_h
+start_fy = arcy + (total_flow_h - total_used)/2 + 5
+for i, (label, bg, tc) in enumerate(flow_items):
+    fy = start_fy + (n_f-1-i)*(box_h+arr_h)
+    flow_box(c, bx_flow, fy, bw_flow, box_h, label, bg=bg, tc=tc)
+    if i < n_f-1:
+        flow_arrow(c, bx_flow+bw_flow/2, fy, arr_h)
+
+# --- ALGORITHM card ---
+algo_h = CH - arch_h - GAP
+algy = BOT
+rr(c, cx2, algy, COL_W, algo_h, r=5, fill=C_CARD, stroke=C_BORDER, sw=0.4)
+sec_bar(c, cx2, algy+algo_h-14, COL_W, 14, 'Algorithm & Logic', bg=C_TEAL)
+
+algy_c = algy + algo_h - 22
+# Confidence formula
+rr(c, cx2+4, algy_c-26, COL_W-8, 30, r=3, fill=colors.HexColor('#fff8e7'), stroke=colors.HexColor('#d4a017'), sw=0.8)
+c.setFillColor(colors.HexColor('#7a5a00')); c.setFont('Helvetica-Bold', 7.5)
+c.drawString(cx2+8, algy_c-5, 'CONFIDENCE FORMULA:')
+c.setFont('Helvetica-Bold', 7); c.setFillColor(C_NAVY)
+c.drawString(cx2+8, algy_c-16, 'score = min(60 + min(n_symp*5, 30) + min(svc_score*3, 10), 95)')
+
+algy_c -= 34
+bul_block(c, cx2+4, algy_c, [
+    'ThreadPoolExecutor runs all agents simultaneously',
+    'Orchestrator returns JSON: agents[], urgency, reasoning',
+    'NLP: LLM maps free text to 132 symptom keys',
+    'Fallback: keyword match if LLM extraction fails',
+], size=7.8, bcolor=C_TEAL, line_h=10.5)
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# COLUMN 3 — Modules + Key Features + Database
+# ═══════════════════════════════════════════════════════════════════════════════
+cx3 = col_x(3)
+
+# --- MODULES card ---
+mod_h = 115*mm
+moy = TOP - mod_h
+rr(c, cx3, moy, COL_W, mod_h, r=5, fill=C_CARD, stroke=C_BORDER, sw=0.4)
+sec_bar(c, cx3, moy+mod_h-14, COL_W, 14, 'Application Modules (7 Pages)', bg=C_ORANGE)
+
+modules = [
+    ('Home Dashboard', '4 metric cards: 8 Agents, 41 Diseases, 132 Symptoms, LLaMA 70B'),
+    ('AI Doctor (Agentic)', '5-step flow: Orchestrate → Vision → Predict → Specialists → Synthesize'),
+    ('Disease Prediction', 'Agentic Top-3 diagnoses with confidence %, red flags, treatment tabs'),
+    ('Report Analyzer', 'Upload .txt lab report → all 8 specialists analyze simultaneously'),
+    ('Voice + Vision', 'Live mic (st.audio_input) + image → Whisper STT → LLaMA 4 Scout'),
+    ('Drug Interaction', 'Pharmacology agent checks pairs: severity, mechanism, alternatives'),
+    ('AI Chat Doctor', 'Full session memory: chat_history[] sent on every API call'),
+]
+moy_c = moy + mod_h - 22
+for mname, mdesc in modules:
+    rect(c, cx3+4, moy_c-1, COL_W-8, 1, fill=colors.HexColor('#eeeeee'))
+    c.setFillColor(C_ORANGE); c.setFont('Helvetica-Bold', 8.2)
+    c.drawString(cx3+6, moy_c-9, mname)
+    c.setFillColor(C_TEXT_MED); c.setFont('Helvetica', 7.5)
+    para(c, cx3+6, moy_c-21, COL_W-12, 14, mdesc, font='Helvetica', size=7.5, color=C_TEXT_MED, leading=10)
+    moy_c -= 15
+
+# --- KEY FEATURES card ---
+kf_h = 62*mm
+kfy = moy - GAP - kf_h
+rr(c, cx3, kfy, COL_W, kf_h, r=5, fill=C_CARD, stroke=C_BORDER, sw=0.4)
+sec_bar(c, cx3, kfy+kf_h-14, COL_W, 14, 'Key Features', bg=C_RED)
+kfy_c = kfy + kf_h - 22
+features = [
+    'Parallel Agent Execution — all 8 specialists simultaneously',
+    'NLP Symptom Extraction — Hindi/English natural language',
+    'Real Vision Analysis — base64 image → LLaMA 4 Scout',
+    'Confidence Scoring — 60–95% per prediction',
+    'Chat Memory — full history in session_state',
+    'Voice I/O — Groq Whisper + gTTS audio',
+    'Drug Interaction Checker — LLM pharmacology',
+    'Medical Safety — disclaimer + emergency 108 alert',
+]
+bul_block(c, cx3+4, kfy_c, features, size=7.8, bcolor=C_RED, line_h=7.2, bold=True)
+
+# --- DATABASE card ---
+db_h = TOP - mod_h - kf_h - 3*GAP - BOT
+dby = BOT
+rr(c, cx3, dby, COL_W, db_h, r=5, fill=C_CARD, stroke=C_BORDER, sw=0.4)
+sec_bar(c, cx3, dby+db_h-14, COL_W, 14, 'Database Design (CSV-based)', bg=C_NAVY)
+csv_files = [
+    ('description.csv', '41 rows', 'Disease, Description'),
+    ('medications.csv', '41 rows', 'Disease, Medication (5 drugs)'),
+    ('diets.csv', '41 rows', 'Disease, Diet recommendations'),
+    ('precautions_df.csv', '41 rows', 'Disease, Precaution_1..4'),
+    ('workout_df.csv', '~410 rows', 'Disease, workout exercises'),
+    ('Symptom-severity.csv', '133 rows', 'Symptom, weight (1-7)'),
+]
+dby_c = dby + db_h - 22
+for fname, rows, cols in csv_files:
+    rr(c, cx3+3, dby_c-11, COL_W-6, 13, r=2, fill=colors.HexColor('#f0f4fb'), stroke=C_BORDER, sw=0.2)
+    c.setFillColor(C_BLUE); c.setFont('Helvetica-Bold', 7.5)
+    c.drawString(cx3+6, dby_c-8, fname)
+    fw = c.stringWidth(fname, 'Helvetica-Bold', 7.5)
+    c.setFillColor(colors.HexColor('#888888')); c.setFont('Helvetica', 7)
+    c.drawString(cx3+8+fw, dby_c-8, ' | '+rows+' | '+cols)
+    dby_c -= 14.5
+
+c.setFillColor(colors.HexColor('#888888')); c.setFont('Helvetica', 7.5)
+c.drawString(cx3+4, dby_c-5, 'No SQL/NoSQL — pandas DataFrames; Disease = FK across files')
+c.drawString(cx3+4, dby_c-15, 'Session state: st.session_state (in-memory, no persistence)')
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# COLUMN 4 — Use Cases + Results + Future Scope + Conclusion
+# ═══════════════════════════════════════════════════════════════════════════════
+cx4 = col_x(4)
+
+# --- USE CASES card ---
+uc_h = 72*mm
+ucy = TOP - uc_h
+rr(c, cx4, ucy, COL_W, uc_h, r=5, fill=C_CARD, stroke=C_BORDER, sw=0.4)
+sec_bar(c, cx4, ucy+uc_h-14, COL_W, 14, 'Use Cases', bg=C_GREEN)
+cases = [
+    ('Rural Hindi Patient', "Types 'mujhe sar dard aur chakkar hai' → NLP maps to headache, dizziness → Neurologist + GP diagnose"),
+    ('Drug Safety Check', 'Aspirin + Warfarin → Agent detects SEVERE interaction (bleeding risk) + suggests alternative'),
+    ('Skin Condition', 'Voice: "rash on arm for 5 days" + photo → Whisper STT + LLaMA 4 Scout → Dermatologist diagnosis'),
+    ('Lab Report Review', 'Uploads blood test .txt → All 8 specialists give domain-specific interpretation'),
+    ('Follow-up Chat', 'AI Chat Doctor remembers earlier anxiety mention → contextual multi-turn conversation'),
+]
+ucy_c = ucy + uc_h - 22
+for i, (title, desc) in enumerate(cases):
+    c.setFillColor(C_GREEN); c.setFont('Helvetica-Bold', 8.2)
+    c.drawString(cx4+4, ucy_c-2, f'UC{i+1}: {title}')
+    para(c, cx4+4, ucy_c-13, COL_W-8, 13, desc, font='Helvetica', size=7.5, color=C_TEXT_MED, leading=10)
+    ucy_c -= 13.5
+
+# --- RESULTS card ---
+res_h = 52*mm
+rey = ucy - GAP - res_h
+rr(c, cx4, rey, COL_W, res_h, r=5, fill=C_CARD, stroke=C_BORDER, sw=0.4)
+sec_bar(c, cx4, rey+res_h-14, COL_W, 14, 'Results & Output', bg=C_ORANGE)
+rey_c = rey + res_h - 22
+bul_block(c, cx4+4, rey_c, [
+    'Parallel execution verified — all agents in <3s response',
+    'Hindi NLP works — symptoms mapped correctly via LLM',
+    'Real image analysis — base64 sent to LLaMA 4 Scout',
+    'Confidence scores: 60–95% per SVC prediction',
+    'Drug JSON parsed — severity badges render correctly',
+    'gTTS MP3 generated — inline audio playback in Streamlit',
+    'Emergency 108 alert triggers on urgency=emergency',
+], size=7.8, bcolor=C_ORANGE, line_h=6.8)
+
+# --- FUTURE SCOPE card ---
+fs_h = 52*mm
+fsy = rey - GAP - fs_h
+rr(c, cx4, fsy, COL_W, fs_h, r=5, fill=C_CARD, stroke=C_BORDER, sw=0.4)
+sec_bar(c, cx4, fsy+fs_h-14, COL_W, 14, 'Future Scope', bg=C_RED)
+fsy_c = fsy + fs_h - 22
+bul_block(c, cx4+4, fsy_c, [
+    'Persistent DB (SQLite/PostgreSQL) for cross-session history',
+    'Fine-tuned medical LLM to reduce Groq API dependency',
+    'EHR / hospital system API integration (FHIR-compliant)',
+    'Wearable IoT sensor data ingestion (heart rate, SpO2)',
+    'HIPAA/DPDP compliance — encryption, audit logs',
+    'Mobile app — Flutter/React Native for offline access',
+    'Hindi TTS — gTTS lang=hi for rural patient accessibility',
+], size=7.8, bcolor=C_RED, line_h=6.8)
+
+# --- CONCLUSION card (fills remaining space) ---
+con_h = TOP - uc_h - res_h - fs_h - 4*GAP - BOT
+cony = BOT
+rr(c, cx4, cony, COL_W, con_h, r=5, fill=C_CARD, stroke=C_BORDER, sw=0.4)
+sec_bar(c, cx4, cony+con_h-14, COL_W, 14, 'Conclusion', bg=C_NAVY)
+conclusion = ('Medimate successfully implements a production-grade agentic AI healthcare system '
+              'with genuine parallel specialist execution, real multimodal image analysis, '
+              'multilingual NLP, SVC-based disease prediction, and clinical drug interaction '
+              'checking — all integrated in a single Streamlit platform. It addresses real '
+              'healthcare gaps: specialist access, language barriers, and diagnostic delays. '
+              'Ready for demonstration and extensible for real-world clinical deployment.')
+para(c, cx4+5, cony+4, COL_W-10, con_h-22, conclusion,
+     font='Helvetica', size=8.2, color=C_TEXT_MED, leading=12.5)
+
+# ── COLUMN SEPARATORS (subtle lines between columns) ─────────────────────────
+c.setStrokeColor(colors.HexColor('#dddddd')); c.setLineWidth(0.5)
+for i in range(1, N_COLS):
+    sx = col_x(i) - GAP/2
+    c.line(sx, BOT, sx, TOP)
+
+# ── SAVE ──────────────────────────────────────────────────────────────────────
+c.save()
+print(f'Saved: {OUT}')
+print(f'Page size: {PW/mm:.0f}mm x {PH/mm:.0f}mm  (A1 landscape)')
